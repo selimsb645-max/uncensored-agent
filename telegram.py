@@ -29,6 +29,24 @@ def send(chat_id, text):
         print("পাঠাতে পারিনি:", type(e).__name__, e)
 
 
+def edit(chat_id, message_id, text):
+    data = urllib.parse.urlencode({"chat_id": chat_id, "message_id": message_id,
+                                   "text": text[:CFG["telegram"]["max_chars"]]}).encode()
+    try:
+        urllib.request.urlopen(f"{API}/editMessageText", data=data, timeout=30).read()
+    except Exception:
+        pass
+
+
+def send_returning(chat_id, text):
+    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text[:CFG["telegram"]["max_chars"]]}).encode()
+    try:
+        r = urllib.request.urlopen(f"{API}/sendMessage", data=data, timeout=30)
+        return json.load(r).get("result", {}).get("message_id")
+    except Exception:
+        return None
+
+
 def get_updates(offset):
     url = f"{API}/getUpdates?" + urllib.parse.urlencode({"offset": offset, "timeout": 40})
     with urllib.request.urlopen(url, timeout=70) as r:
@@ -62,8 +80,22 @@ def main():
                 continue
             hist = chats.setdefault(chat_id, [{"role": "system", "content": system_prompt("chat")}])
             hist.append({"role": "user", "content": text})
+            # স্ট্রিমিং: প্রথম শব্দের জন্য অপেক্ষা না করে লেখা আসার সাথে সাথে দেখায়
+            mid = send_returning(chat_id, "…")
+            last = {"t": 0.0, "sent": ""}
+
+            def on_token(partial):
+                if not mid or not CFG["telegram"].get("stream", True):
+                    return
+                now = time.time()
+                if now - last["t"] < CFG["telegram"].get("edit_every_sec", 2.0):
+                    return
+                last["t"] = now
+                last["sent"] = partial
+                edit(chat_id, mid, partial + " ▌")
+
             try:
-                out = agent_turn(hist, 0.6)
+                out = agent_turn(hist, CFG["temperature"], on_token)
             except Exception as e:
                 send(chat_id, f"ত্রুটি: {type(e).__name__}")
                 continue
@@ -71,7 +103,10 @@ def main():
             limit = CFG["telegram"]["history_messages"]
             if len(hist) > limit + 1:
                 hist[:] = hist[:1] + hist[-limit:]
-            send(chat_id, out or "(কোনো উত্তর আসেনি)")
+            if mid:
+                edit(chat_id, mid, out or "(কোনো উত্তর আসেনি)")
+            else:
+                send(chat_id, out or "(কোনো উত্তর আসেনি)")
 
 
 if __name__ == "__main__":

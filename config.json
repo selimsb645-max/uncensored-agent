@@ -1,19 +1,27 @@
 {
   "model_tier": "14b",
   "temperature": 0.6,
-  "max_tokens": 900,
+  "max_tokens": 500,
   "context": 4096,
   "max_steps": 6,
   "memory_limit": 80,
   "memory_in_prompt": 20,
   "language": "bn",
   "workdir": "~/agent-work",
-  "tools": ["run_shell", "read_file", "write_file", "fetch_url", "remember"],
+  "tools": [
+    "run_shell",
+    "read_file",
+    "write_file",
+    "fetch_url",
+    "remember"
+  ],
   "presets_file": "prompts.json",
   "base_prompt": "solas_prompt.md",
   "telegram": {
     "max_chars": 3900,
-    "history_messages": 14
+    "history_messages": 14,
+    "stream": true,
+    "edit_every_sec": 2.0
   },
   "github": {
     "schedule_hours": 5,

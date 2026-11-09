@@ -112,18 +112,51 @@ def run_tool(name, args):
         return f"টুল ব্যর্থ: {type(e).__name__}: {e}"
 
 
-def call_model(messages, temp=0.6):
-    body = json.dumps({"messages": messages, "temperature": temp,
-                       "max_tokens": CFG["max_tokens"], "tools": TOOLS, "tool_choice": "auto"}).encode()
-    req = urllib.request.Request(ENDPOINT, data=body, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=600) as r:
-        return json.load(r)["choices"][0]["message"]
+def call_model(messages, temp=0.6, on_token=None):
+    """মডেলকে ডাকে। on_token দিলে উত্তর লেখার সাথে সাথে টুকরো টুকরো পাঠায়
+    (streaming), ফলে প্রথম শব্দ কয়েক সেকেন্ডেই দেখা যায়।"""
+    payload = {"messages": messages, "temperature": temp,
+               "max_tokens": CFG["max_tokens"], "tools": TOOLS, "tool_choice": "auto"}
+    if on_token:
+        payload["stream"] = True
+    req = urllib.request.Request(ENDPOINT, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=900) as r:
+        if not on_token:
+            return json.load(r)["choices"][0]["message"]
+        content, calls = "", {}
+        for raw in r:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            chunk = line[5:].strip()
+            if chunk == "[DONE]":
+                break
+            try:
+                delta = json.loads(chunk)["choices"][0].get("delta") or {}
+            except Exception:
+                continue
+            if delta.get("content"):
+                content += delta["content"]
+                on_token(content)
+            for tc in delta.get("tool_calls") or []:
+                slot = calls.setdefault(tc.get("index", 0),
+                                        {"id": "", "type": "function",
+                                         "function": {"name": "", "arguments": ""}})
+                if tc.get("id"):
+                    slot["id"] = tc["id"]
+                fn = tc.get("function") or {}
+                if fn.get("name"):
+                    slot["function"]["name"] += fn["name"]
+                if fn.get("arguments"):
+                    slot["function"]["arguments"] += fn["arguments"]
+        return {"content": content, "tool_calls": [calls[k] for k in sorted(calls)]}
 
 
-def agent_turn(messages, temp):
+def agent_turn(messages, temp, on_token=None):
     """একটা প্রশ্নের উত্তর দিতে যত ধাপ লাগে তত ধাপ চালায়।"""
     for _ in range(MAX_STEPS):
-        msg = call_model(messages, temp)
+        msg = call_model(messages, temp, on_token)
         calls = msg.get("tool_calls") or []
         if not calls:
             return msg.get("content", "").strip()
