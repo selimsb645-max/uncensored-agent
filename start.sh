@@ -17,4 +17,10 @@ if ! curl -s --max-time 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
     sleep 2
   done
 fi
-python3 "$(dirname "$0")/agent.py" "$@"
+ARGS=()
+for a in "$@"; do [ "$a" = "--tools" ] || ARGS+=("$a"); done
+if printf '%s\n' "$@" | grep -qx -- "--tools"; then
+  python3 "$(dirname "$0")/tools_agent.py" "${ARGS[@]}"
+else
+  python3 "$(dirname "$0")/agent.py" "${ARGS[@]}"
+fi
