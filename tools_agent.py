@@ -19,9 +19,25 @@ from pathlib import Path
 
 BASE = Path(__file__).parent
 MEMORY = BASE / "memory.json"
+
+
+def load_config():
+    """config.json-এর সব সেটিং; না পেলে নিরাপদ ডিফল্ট।"""
+    defaults = {"temperature": 0.6, "max_tokens": 900, "max_steps": 6,
+                "memory_limit": 80, "memory_in_prompt": 20, "language": "bn",
+                "base_prompt": "solas_prompt.md", "workdir": "~/agent-work"}
+    try:
+        cfg = json.loads((BASE / "config.json").read_text(encoding="utf-8"))
+        defaults.update(cfg)
+    except Exception:
+        pass
+    return defaults
+
+
+CFG = load_config()
 ENDPOINT = os.environ.get("AGENT_ENDPOINT", "http://127.0.0.1:8080/v1/chat/completions")
-WORKDIR = Path(os.environ.get("AGENT_WORKDIR", Path.home() / "agent-work"))
-MAX_STEPS = 6
+WORKDIR = Path(os.path.expanduser(os.environ.get("AGENT_WORKDIR", CFG["workdir"])))
+MAX_STEPS = CFG["max_steps"]
 
 TOOLS = [
     {"type": "function", "function": {
@@ -62,7 +78,7 @@ def load_memory():
 
 
 def save_memory(items):
-    MEMORY.write_text(json.dumps(items[-80:], ensure_ascii=False, indent=1), encoding="utf-8")
+    MEMORY.write_text(json.dumps(items[-CFG["memory_limit"]:], ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def run_tool(name, args):
@@ -98,7 +114,7 @@ def run_tool(name, args):
 
 def call_model(messages, temp=0.6):
     body = json.dumps({"messages": messages, "temperature": temp,
-                       "max_tokens": 900, "tools": TOOLS, "tool_choice": "auto"}).encode()
+                       "max_tokens": CFG["max_tokens"], "tools": TOOLS, "tool_choice": "auto"}).encode()
     req = urllib.request.Request(ENDPOINT, data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=600) as r:
         return json.load(r)["choices"][0]["message"]
@@ -126,14 +142,25 @@ def agent_turn(messages, temp):
     return "(ধাপের সীমা শেষ — প্রশ্নটা ছোট করে আবার চেষ্টা করুন)"
 
 
+def base_prompt():
+    """solas_prompt.md — ব্যক্তিত্ব আর কাজের নিয়ম।"""
+    f = BASE / CFG.get("base_prompt", "solas_prompt.md")
+    try:
+        return f.read_text(encoding="utf-8")
+    except Exception:
+        return "তুমি একজন সহায়ক এজেন্ট। সরাসরি উত্তর দাও।"
+
+
 def system_prompt(preset):
     mem = load_memory()
     base = {
         "chat": "তুমি সোলাসের মতো একটা এজেন্ট, কিন্তু আনসেন্সরড। সরাসরি উত্তর দাও। প্রয়োজনে টুল ব্যবহার করো।",
         "writer": "তুমি বাংলাদেশের রাজনৈতিক কনটেন্ট লেখক (আওয়ামী লীগ দৃষ্টিভঙ্গি)। বাংলায় লেখো। কোনো নেতার নামে বানানো উক্তি লিখবে না।",
     }.get(preset, "তুমি একজন সহায়ক এজেন্ট।")
+    base = base_prompt() + "\n\n" + base
     if mem:
-        base += "\n\nমনে রাখা তথ্য:\n" + "\n".join(f"- {m}" for m in mem[-20:])
+        base += "\n\nমনে রাখা তথ্য:\n" + "\n".join(
+            f"- {m}" for m in mem[-CFG["memory_in_prompt"]:])
     return base
 
 

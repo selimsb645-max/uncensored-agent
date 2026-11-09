@@ -99,3 +99,15 @@ python3 telegram.py
 
 Actions-এ GPU নেই, জব ৬ ঘণ্টায় শেষ হয়, ডিস্ক ইফেমেরাল — মডেল ২৪/৭ চালানো যায় না।
 তাই কোড GitHub-এ, রান ফোনে।
+
+## এজেন্টের সব সেটিং এক জায়গায়
+
+| ফাইল | কী আছে |
+|---|---|
+| `solas_prompt.md` | ব্যক্তিত্ব, কাজের নিয়ম, সততা, রাজনৈতিক কনটেন্টের নিয়ম |
+| `config.json` | মডেল, temperature, max_tokens, ধাপের সীমা, মেমোরি, Telegram সেটিং |
+| `prompts.json` | প্রিসেট (chat / writer / caption / script) |
+| `memory.json` | যে তথ্য "মনে রাখো" বলে রাখা হয় (GitHub রানে ক্যাশে থাকে) |
+
+Temperature বদলাতে চাইলে `config.json`-এ `temperature` বদলে পুশ করুন — কোড ছুঁতে হবে না।
+tone ঠিক করতে চাইলে `solas_prompt.md`-এ লিখুন; বট পরের রানেই সেটা মেনে চলবে।

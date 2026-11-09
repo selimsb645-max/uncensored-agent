@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tools_agent import agent_turn, system_prompt  # noqa: E402
+from tools_agent import CFG, agent_turn, system_prompt  # noqa: E402
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 ALLOWED = {x.strip() for x in os.environ.get("TELEGRAM_ALLOWED", "").split(",") if x.strip()}
@@ -22,7 +22,7 @@ API = f"https://api.telegram.org/bot{TOKEN}"
 
 
 def send(chat_id, text):
-    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text[:3900]}).encode()
+    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text[:CFG["telegram"]["max_chars"]]}).encode()
     try:
         urllib.request.urlopen(f"{API}/sendMessage", data=data, timeout=40).read()
     except Exception as e:
@@ -68,8 +68,9 @@ def main():
                 send(chat_id, f"ত্রুটি: {type(e).__name__}")
                 continue
             hist.append({"role": "assistant", "content": out})
-            if len(hist) > 15:
-                hist[:] = hist[:1] + hist[-14:]
+            limit = CFG["telegram"]["history_messages"]
+            if len(hist) > limit + 1:
+                hist[:] = hist[:1] + hist[-limit:]
             send(chat_id, out or "(কোনো উত্তর আসেনি)")
 
 

@@ -41,6 +41,13 @@ jobs:
           path: models
           key: model-${{ env.MODEL_TIER }}-v1
 
+      - name: মেমোরি ক্যাশ (আগের কথা মনে রাখতে)
+        uses: actions/cache@v4
+        with:
+          path: memory.json
+          key: agent-memory-${{ github.run_id }}
+          restore-keys: agent-memory-
+
       - name: মডেল নামানো
         run: bash ci/fetch_model.sh
 
