@@ -1,0 +1,61 @@
+name: Uncensored Agent (24/7)
+
+# লাইক বটের মতোই GitHub-এর রানারে চলে: মডেল নামে, সার্ভার ওঠে,
+# তারপর Telegram থেকে প্রশ্নের উত্তর দিতে থাকে। ফোন বন্ধ থাকলেও কাজ করে।
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "মডেল সাইজ"
+        type: choice
+        default: "14b"
+        options: ["7b", "14b", "32b"]
+      hours:
+        description: "কত ঘণ্টা চলবে (সর্বোচ্চ ৫)"
+        default: "4"
+  schedule:
+    - cron: "0 */5 * * *"
+
+concurrency:
+  group: uncensored-agent
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      MODEL_TIER: ${{ github.event.inputs.model || '14b' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ফ্রি ডিস্ক দেখা
+        run: df -h / && free -h
+
+      - name: মডেল ক্যাশ
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: model-${{ env.MODEL_TIER }}-v1
+
+      - name: মডেল নামানো
+        run: bash ci/fetch_model.sh
+
+      - name: llama.cpp ক্যাশ
+        uses: actions/cache@v4
+        with:
+          path: ~/llama.cpp/build
+          key: llamacpp-build-v1
+
+      - name: llama.cpp বিল্ড
+        run: bash ci/build_llama.sh
+
+      - name: সার্ভার + Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALLOWED: ${{ secrets.TELEGRAM_ALLOWED }}
+          AGENT_ENDPOINT: http://127.0.0.1:8080/v1/chat/completions
+        run: bash ci/serve_and_run.sh
