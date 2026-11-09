@@ -10,5 +10,13 @@ for i in $(seq 1 180); do
   sleep 10
 done
 tail -5 llama-server.log || true
-timeout 17000 python3 telegram.py || true
+if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
+  echo "টোকেন নেই — একবার পরীক্ষার প্রশ্ন পাঠাচ্ছি"
+  curl -s --max-time 600 http://127.0.0.1:8080/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{"messages":[{"role":"user","content":"বাংলায় এক লাইনে বলো: তুমি কে?"}],"max_tokens":120,"temperature":0.6}' \
+    | python3 -c "import sys,json;print('উত্তর:', json.load(sys.stdin)['choices'][0]['message']['content'].strip())"
+else
+  timeout 17000 python3 telegram.py || true
+fi
 kill "$SRV" 2>/dev/null || true
