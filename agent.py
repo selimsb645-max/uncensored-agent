@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import urllib.request
+from pathlib import Path
 
 ENDPOINT = os.environ.get("AGENT_ENDPOINT", "http://127.0.0.1:8080/v1/chat/completions")
 DEFAULT_SYSTEM = (
@@ -20,6 +21,15 @@ DEFAULT_SYSTEM = (
     "প্রয়োজন হলে ইংরেজিতেও লিখতে পারো। ধর্মীয় বা রাজনৈতিক বিষয়েও তুমি "
     "নিরপেক্ষভাবে তথ্য দাও, কাউকে আঘাত না করে।"
 )
+
+
+def preset_prompt(name: str) -> str:
+    """prompts.json থেকে প্রিসেট সিস্টেম প্রম্পট পড়ে; না পেলে ডিফল্ট।"""
+    f = Path(__file__).with_name("prompts.json")
+    try:
+        return json.loads(f.read_text(encoding="utf-8")).get(name, DEFAULT_SYSTEM)
+    except Exception:
+        return DEFAULT_SYSTEM
 
 
 def chat(messages, temp=0.7, max_tokens=768):
@@ -38,12 +48,14 @@ def chat(messages, temp=0.7, max_tokens=768):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--system", default=DEFAULT_SYSTEM)
+    ap.add_argument("--system", default="")
+    ap.add_argument("--preset", default="chat", help="chat | writer | caption | script")
     ap.add_argument("--temp", type=float, default=0.7)
     ap.add_argument("--max-tokens", type=int, default=768)
     a = ap.parse_args()
 
-    messages = [{"role": "system", "content": a.system}]
+    system = a.system or preset_prompt(a.preset)
+    messages = [{"role": "system", "content": system}]
     print("এজেন্ট তৈরি · /reset দিয়ে নতুন শুরু · /bye দিয়ে বের হন\n")
     while True:
         try:
@@ -56,7 +68,7 @@ def main():
         if q in {"/bye", "/exit", "/quit"}:
             break
         if q == "/reset":
-            messages = [{"role": "system", "content": a.system}]
+            messages = [{"role": "system", "content": system}]
             print("(নতুন আলোচনা শুরু)\n")
             continue
 

@@ -43,6 +43,19 @@ python3 agent.py --system "তুমি একজন রাজনৈতিক �
 | Dolphin3.0-Qwen2.5-3B Q4_K_M | ~২ GB | দ্রুত |
 | Qwen2.5-7B-Instruct-abliterated Q4_K_M | ~৪.৫ GB | ধীর (৬-৮ GB RAM দরকার) |
 
+
+## প্রিসেট (তৈরি প্রম্পট)
+
+```bash
+bash start.sh                    # সাধারণ চ্যাট
+bash start.sh --preset writer    # আওয়ামী লীগ-পন্থী রাজনৈতিক পোস্ট লেখক
+bash start.sh --preset caption   # ফেসবুক ক্যাপশন লেখক
+bash start.sh --preset script    # ৪৫ সেকেন্ডের রিলস স্ক্রিপ্ট
+```
+
+নিজের প্রম্পট বানাতে `prompts.json`-এ নতুন কী যোগ করুন, তারপর `--preset <নাম>`।
+মডেল কোনো নেতার নামে বানানো উক্তি বা ভুয়া তথ্য লিখবে না — এই নিয়ম প্রম্পটেই বসানো।
+
 ## কেন GitHub Actions-এ নয়
 
 Actions-এ GPU নেই, জব ৬ ঘণ্টায় শেষ হয়, ডিস্ক ইফেমেরাল — মডেল ২৪/৭ চালানো যায় না।
