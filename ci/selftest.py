@@ -39,7 +39,26 @@ def main():
     print("সেলফ-টেস্ট ধাপ:", steps, flush=True)
     print("সেলফ-টেস্ট টুল ব্যবহার:", "হ্যাঁ" if used_tool else "না", flush=True)
     print("সেলফ-টেস্ট উত্তর:", (out or "")[:500], flush=True)
+    if not used_tool:
+        alert("সতর্কতা: টুল সেলফ-টেস্টে মডেল টুল ডাকেনি।\nউত্তর: " + (out or "")[:300]
+              + "\nলগ: https://github.com/selimsb645-max/uncensored-agent/actions")
     return 0 if used_tool else 2
+
+
+def alert(text):
+    """কেবল সমস্যা হলে মালিককে টেলিগ্রামে জানানো হয়।"""
+    import json as _json
+    import urllib.parse
+    import urllib.request
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat = (os.environ.get("TELEGRAM_ALLOWED", "").split(",") or [""])[0].strip()
+    if not token or not chat:
+        return
+    try:
+        data = urllib.parse.urlencode({"chat_id": chat, "text": text[:1500]}).encode()
+        urllib.request.urlopen(f"https://api.telegram.org/bot{token}/sendMessage", data=data, timeout=30).read()
+    except Exception as e:
+        print("সতর্কবার্তা পাঠানো গেল না:", type(e).__name__, flush=True)
 
 
 if __name__ == "__main__":

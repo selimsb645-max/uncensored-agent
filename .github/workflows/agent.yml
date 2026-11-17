@@ -64,6 +64,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           STATE_BRANCH: agent-state
-          AGENT_CONTEXT: 6144
+          AGENT_CONTEXT: 8192
           AGENT_SELFTEST: "1"
         run: bash ci/serve_and_run.sh

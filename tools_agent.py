@@ -16,6 +16,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -163,7 +164,7 @@ def dangerous(command):
     return None
 
 
-def load_learnings(limit=40):
+def load_learnings(limit=20):
     try:
         lines = [ln.strip() for ln in LEARNED.read_text(encoding="utf-8").split("\n") if ln.strip().startswith("- ")]
         return lines[-limit:]
@@ -344,15 +345,86 @@ def run_tool(name, args):
         return f"টুল ব্যর্থ: {type(e).__name__}: {e}"
 
 
-def call_model(messages, temp=0.6, on_token=None):
-    """মডেলকে ডাকে। on_token দিলে উত্তর লেখার সাথে সাথে টুকরো টুকরো পাঠায়।"""
-    payload = {"messages": messages, "temperature": temp,
-               "max_tokens": CFG["max_tokens"], "tools": TOOLS, "tool_choice": "auto"}
-    if on_token:
-        payload["stream"] = True
+class ModelError(RuntimeError):
+    """সার্ভার যখন طلب reject করে — কারণসহ।"""
+
+
+def _request(payload):
+    """POST করে রেসপন্স দেয়; ব্যর্থ হলে সার্ভারের নিজের লেখাসহ error তোলে।"""
     req = urllib.request.Request(ENDPOINT, data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=900) as r:
+    try:
+        return urllib.request.urlopen(req, timeout=900)
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", "replace")[:600]
+        except Exception:
+            pass
+        raise ModelError(f"HTTP {e.code}: {body or e.reason}") from None
+
+
+def _sanitise(messages):
+    """টেমপ্লেট নায্য নয়: খালি tool_call id বা খালি content থাকলে সার্ভার 400 দেয়।"""
+    out = []
+    for m in messages:
+        m = dict(m)
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            calls = []
+            for j, c in enumerate(m["tool_calls"]):
+                fn = c.get("function") or {}
+                calls.append({"id": c.get("id") or f"call_{len(out)}_{j}",
+                              "type": "function",
+                              "function": {"name": fn.get("name", ""),
+                                           "arguments": fn.get("arguments") or "{}"}})
+            m["tool_calls"] = calls
+            m["content"] = m.get("content") or ""
+        if m.get("role") == "tool" and not m.get("tool_call_id"):
+            m["tool_call_id"] = "call_0"
+        out.append(m)
+    return out
+
+
+def _flatten(messages):
+    """টুল-বার্তার গঠন সার্ভার না মানলে পুরো ইতিহাস সাধারণ লেখায় নামিয়ে আনা হয়।"""
+    parts = []
+    for m in messages:
+        role = m.get("role")
+        if role == "system":
+            parts.append(m.get("content") or "")
+        elif role == "user":
+            parts.append("\n[মালিক] " + (m.get("content") or ""))
+        elif role == "assistant":
+            if m.get("tool_calls"):
+                for c in m["tool_calls"]:
+                    fn = c.get("function") or {}
+                    parts.append(f"\n[আমি চালালাম] {fn.get('name')}({fn.get('arguments')})")
+            elif m.get("content"):
+                parts.append("\n[আমি] " + m["content"])
+        elif role == "tool":
+            parts.append("\n[ফল] " + (m.get("content") or "")[:1500])
+    text = "\n".join(parts)
+    return [{"role": "user", "content": text[-14000:]}]
+
+
+def call_model(messages, temp=0.6, on_token=None, tools=True):
+    """মডেলকে ডাকে। সার্ভার টুল-বার্তা না নিলে ইতিহাস সরল করে আবার চেষ্টা করে।"""
+    messages = _sanitise(messages)
+    payload = {"messages": messages, "temperature": temp, "max_tokens": CFG["max_tokens"]}
+    if tools:
+        payload["tools"] = TOOLS
+        payload["tool_choice"] = "auto"
+    if on_token:
+        payload["stream"] = True
+    try:
+        r = _request(payload)
+    except ModelError as e:
+        if not any(m.get("role") == "tool" or m.get("tool_calls") for m in messages):
+            raise
+        print(f"   ⚠ সার্ভার গ্রহণ করেনি ({str(e)[:200]}) — ইতিহাস সরল করে আবার", flush=True)
+        payload["messages"] = _flatten(messages)
+        r = _request(payload)
+    with r:
         if not on_token:
             return json.load(r)["choices"][0]["message"]
         content, calls = "", {}
@@ -381,7 +453,10 @@ def call_model(messages, temp=0.6, on_token=None):
                     slot["function"]["name"] += fn["name"]
                 if fn.get("arguments"):
                     slot["function"]["arguments"] += fn["arguments"]
-        return {"content": content, "tool_calls": [calls[k] for k in sorted(calls)]}
+        out = [calls[k] for k in sorted(calls)]
+        for i, c in enumerate(out):
+            c["id"] = c["id"] or f"call_{i}"
+        return {"content": content, "tool_calls": out}
 
 
 def agent_turn(messages, temp, on_token=None, on_step=None, should_stop=None):
