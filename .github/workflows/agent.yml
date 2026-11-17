@@ -1,7 +1,8 @@
 name: Uncensored Agent (24/7)
 
-# লাইক বটের মতোই GitHub-এর রানারে চলে: মডেল নামে, সার্ভার ওঠে,
-# তারপর Telegram থেকে প্রশ্নের উত্তর দিতে থাকে। ফোন বন্ধ থাকলেও কাজ করে।
+# GitHub-এর রানারে চলে: মডেল নামে, সার্ভার ওঠে, তারপর Telegram থেকে কাজ করে।
+# কাজ শেষে ওয়ার্কস্পেস + মেমোরি agent-state ব্রাঞ্চে রাখা হয়, তাই পরের রানে
+# (প্রতি ৫ ঘণ্টায়) আগের ফাইল আর মনে রাখা তথ্য ফিরে আসে।
 on:
   workflow_dispatch:
     inputs:
@@ -21,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   agent:
@@ -31,6 +32,8 @@ jobs:
       MODEL_TIER: ${{ github.event.inputs.model || '14b' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: ফ্রি ডিস্ক দেখা
         run: df -h / && free -h
@@ -40,13 +43,6 @@ jobs:
         with:
           path: models
           key: model-${{ env.MODEL_TIER }}-v1
-
-      - name: মেমোরি ক্যাশ (আগের কথা মনে রাখতে)
-        uses: actions/cache@v4
-        with:
-          path: memory.json
-          key: agent-memory-${{ github.run_id }}
-          restore-keys: agent-memory-
 
       - name: মডেল নামানো
         run: bash ci/fetch_model.sh
@@ -60,9 +56,14 @@ jobs:
       - name: llama.cpp বিল্ড
         run: bash ci/build_llama.sh
 
-      - name: সার্ভার + Telegram
+      - name: সার্ভার + Telegram (টুলসহ)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALLOWED: ${{ secrets.TELEGRAM_ALLOWED }}
           AGENT_ENDPOINT: http://127.0.0.1:8080/v1/chat/completions
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          STATE_BRANCH: agent-state
+          AGENT_CONTEXT: 6144
+          AGENT_SELFTEST: "1"
         run: bash ci/serve_and_run.sh
