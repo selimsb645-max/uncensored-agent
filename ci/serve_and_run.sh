@@ -57,7 +57,7 @@ tail -5 llama-server.log || true
 # টুল ঠিকঠাক চলছে কি না, প্রতিটি রানেই একবার যাচাই (লগে দেখা যাবে)
 if [ "${AGENT_SELFTEST:-1}" = "1" ]; then
   echo "টুল সেলফ-টেস্ট চলছে…"
-  AGENT_WORKDIR="$WORK" timeout 900 python3 -u ci/selftest.py || true
+  AGENT_WORKDIR="$WORK" timeout 420 python3 -u ci/selftest.py || true
 fi
 
 if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then

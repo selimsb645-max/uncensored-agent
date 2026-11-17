@@ -185,6 +185,20 @@ def poller():
             WORK.put((chat_id, text))
 
 
+def start_queued_task(chat_id):
+    """লাইনে থাকা কাজ থাকলে রান শুরুতেই একটা নিজে ধরে নেয় (মালিককে জানিয়ে)।"""
+    items = TA.load_tasks()
+    pending = [x for x in items if not x.get("done")]
+    if not pending:
+        return False
+    task = pending[0]
+    task["done"] = True
+    TA.save_tasks(items)
+    send(chat_id, f"নিজে থেকে ধরলাম: {task.get('text', '')[:400]}\n(শেষ হলে জানাব)")
+    WORK.put((chat_id, f"[নিজে থেকে করা কাজ] {task.get('text', '')}"))
+    return True
+
+
 def history(chat_id):
     return CHATS.setdefault(chat_id, [{"role": "system", "content": system_prompt("chat")}])
 
@@ -194,6 +208,11 @@ def main():
         sys.exit("TELEGRAM_BOT_TOKEN নেই — BotFather থেকে টোকেন নিয়ে export করুন")
     print("Telegram সেতু চালু (টুলসহ)।", flush=True)
     threading.Thread(target=poller, daemon=True).start()
+    if ALLOWED:
+        try:
+            start_queued_task(next(iter(ALLOWED)))
+        except Exception as e:
+            print("লাইনে থাকা কাজ শুরু করা গেল না:", type(e).__name__, flush=True)
     while True:
         chat_id, text = WORK.get()
         if text.strip() == "/reset":

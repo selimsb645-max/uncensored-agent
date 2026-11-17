@@ -44,6 +44,9 @@ MAX_STEPS = CFG["max_steps"]
 MAX_OUTPUT = int(CFG.get("max_output", 6000))
 SHELL_TIMEOUT = int(CFG.get("shell_timeout", 240))
 MEMORY = WORKDIR / "memory.json"
+LEARNED = WORKDIR / "learnings.md"
+TOOLDIR = WORKDIR / "tools"
+TASKS = WORKDIR / "tasks.json"
 
 # টেলিগ্রাম স্তর এখানে ফাংশন বসায়, তখন এজেন্ট মালিককে ফাইল পাঠাতে পারে
 FILE_SENDER = None
@@ -103,6 +106,26 @@ TOOLS = [
             "path": {"type": "string"},
             "caption": {"type": "string"}}, "required": ["path"]}}},
     {"type": "function", "function": {
+        "name": "learn",
+        "description": "নিজের জন্য একটা শিক্ষা লিখে রাখে (কী কাজ করল, কী ব্যর্থ হল, কীভাবে ঠিক হল)। "
+                       "পরের রানেও এটা পড়ে নিজে উন্নতি করবে।",
+        "parameters": {"type": "object", "properties": {
+            "text": {"type": "string"}}, "required": ["text"]}}},
+    {"type": "function", "function": {
+        "name": "make_tool",
+        "description": "নিজের জন্য নতুন টুল (পাইথন স্ক্রিপ্ট) বানিয়ে সংরক্ষণ করে। পরে "
+                       "run_shell দিয়ে `python3 tools/<নাম>.py` চালানো যাবে। কাজ বারবার লাগলে এটা ব্যবহার করো।",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "ইংরেজি ছোট নাম, যেমন resize_image"},
+            "description": {"type": "string", "description": "কী করে, কীভাবে চালাতে হয়"},
+            "code": {"type": "string", "description": "পুরো পাইথন কোড"}},
+            "required": ["name", "code"]}}},
+    {"type": "function", "function": {
+        "name": "add_task",
+        "description": "পরে নিজে নিজে করার জন্য একটা কাজ লাইনে রাখে (রিস্টার্টের পরও থাকবে)।",
+        "parameters": {"type": "object", "properties": {
+            "text": {"type": "string"}}, "required": ["text"]}}},
+    {"type": "function", "function": {
         "name": "remember",
         "description": "ভবিষ্যতের জন্য একটা স্থায়ী তথ্য মেমোরিতে রাখে (পছন্দ, নিয়ম, সিদ্ধান্ত)।",
         "parameters": {"type": "object", "properties": {
@@ -138,6 +161,32 @@ def dangerous(command):
         if re.search(pattern, command):
             return why
     return None
+
+
+def load_learnings(limit=40):
+    try:
+        lines = [ln.strip() for ln in LEARNED.read_text(encoding="utf-8").split("\n") if ln.strip().startswith("- ")]
+        return lines[-limit:]
+    except Exception:
+        return []
+
+
+def append_learning(text):
+    LEARNED.parent.mkdir(parents=True, exist_ok=True)
+    with open(LEARNED, "a", encoding="utf-8") as f:
+        f.write(f"- {text.strip()}\n")
+
+
+def load_tasks():
+    try:
+        return json.loads(TASKS.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def save_tasks(items):
+    TASKS.parent.mkdir(parents=True, exist_ok=True)
+    TASKS.write_text(json.dumps(items[-100:], ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def load_memory():
@@ -267,6 +316,22 @@ def run_tool(name, args):
             if FILE_SENDER is None:
                 return "এখান থেকে ফাইল পাঠানো যায় না (শুধু টেলিগ্রাম থেকে চালালে কাজ করে)"
             return FILE_SENDER(str(p), str(args.get("caption") or ""))
+        if name == "learn":
+            append_learning(str(args.get("text", "")))
+            return "শেখা হিসেবে রাখা হলো"
+        if name == "make_tool":
+            slug = re.sub(r"[^a-z0-9_]", "_", str(args.get("name", "")).strip().lower())[:40] or "tool"
+            TOOLDIR.mkdir(parents=True, exist_ok=True)
+            target = TOOLDIR / f"{slug}.py"
+            target.write_text(str(args.get("code", "")), encoding="utf-8")
+            os.chmod(target, 0o755)
+            append_learning(f"টুল `{slug}` বানানো হয়েছে ({str(args.get('description', ''))[:80]}), চালাতে: python3 tools/{slug}.py")
+            return f"টুল তৈরি: {target} — চালাতে: python3 tools/{slug}.py"
+        if name == "add_task":
+            items = load_tasks()
+            items.append({"text": str(args.get("text", "")).strip(), "done": False})
+            save_tasks(items)
+            return "কাজ লাইনে রাখা হলো"
         if name == "remember":
             items = load_memory()
             items.append(str(args.get("text", "")).strip())
@@ -378,7 +443,13 @@ def system_prompt(preset):
              "send_file (মালিকের টেলিগ্রামে ফাইল পাঠায়), remember। "
              "ওয়ার্কস্পেস ফোল্ডার রিস্টার্টের পরও থাকে। "
              "কাজ শেষ হলে সংক্ষেপে বলো কী করলে আর ফল কী হলো। "
-             "ধ্বংসাত্মক কিছু (rm -rf, ফরম্যাট, জোর পুশ) নিজে থেকে করবে না — আগে মালিককে জিজ্ঞেস করো।")
+             "ধ্বংসাত্মক কিছু (rm -rf, ফরম্যাট, জোর পুশ) নিজে থেকে করবে না — আগে মালিককে জিজ্ঞেস করো। "
+             "নতুন কিছু শিখলে বা কোনো কৌশল কাজ করলে `learn` দিয়ে লিখে রাখো, "
+             "বারবার দরকারি কাজের জন্য `make_tool` দিয়ে নিজের টুল বানাও, "
+             "পরে করার কাজ `add_task` দিয়ে লাইনে রাখো — এগুলো পরের রানেও থাকবে।")
+    learned = load_learnings()
+    if learned:
+        base += "\n\nনিজের আগের অভিজ্ঞতা (এগুলো নিজে শিখেছ):\n" + "\n".join(learned)
     if mem:
         base += "\n\nমনে রাখা তথ্য:\n" + "\n".join(f"- {m}" for m in mem[-CFG["memory_in_prompt"]:])
     return base

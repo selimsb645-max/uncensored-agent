@@ -11,7 +11,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import tools_agent as TA  # noqa: E402
 
-PROMPT = "শেল দিয়ে আজকের UTC তারিখ আর ডিস্কের খালি জায়গা দেখে এক লাইনে বলো।"
+PROMPT = "শেল দিয়ে date -u চালিয়ে এক লাইনে বলো।"
+
+# রানারে CPU-তে মডেল ধীর, তাই সেলফ-টেস্ট ছোট রাখা হয়
+TA.MAX_STEPS = 2
+TA.CFG["max_tokens"] = 220
 
 steps = []
 
